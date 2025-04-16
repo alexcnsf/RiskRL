@@ -3,20 +3,23 @@ from agents.ppo_agent import PPOAgent
 from agents.greedy_bot import GreedyBot
 from core.game_state import GameState
 from core.game_manager import GameManager
-from core.risk_map import adjacency
+#from core.risk_map import adjacency
+from core.risk_map import simple_adjacency as adjacency
 import matplotlib.pyplot as plt
 
 def calculate_reward(state, winner, turn_count, player_id=1):
     if winner is not None:
-        terminal_reward = 5.0 if winner == player_id else -5.0
-    else:
-        terminal_reward = 0
-
+        # Large reward for winning, large penalty for losing
+        return 10.0 if winner == player_id else -10.0
+    
+    # Small reward for each territory owned above initial 5
     territories_owned = len(state.get_owned_territories(player_id))
-    territory_reward = 0.1 * (territories_owned - 5)
-
-    total_reward = terminal_reward + territory_reward
-    return total_reward
+    territory_reward = 0.2 * (territories_owned - 5)
+    
+    # Small penalty for taking too many turns
+    turn_penalty = -0.01 * turn_count
+    
+    return territory_reward + turn_penalty
 
 def train_ppo_against_greedy(
     total_episodes=1000,
@@ -30,10 +33,10 @@ def train_ppo_against_greedy(
         player_id=1,
         state_dim=state_dim,
         action_dim=action_dim,
-        lr=0.00005,
+        lr=0.0001,
         gamma=0.99,
-        epsilon=0.1,
-        entropy_coef=0.02
+        epsilon=0.2,
+        entropy_coef=0.05
     )
     greedy_bot = GreedyBot(player_id=2)
 
@@ -92,8 +95,15 @@ def train_ppo_against_greedy(
         reward_history.append(final_reward)
 
         if episode % update_every == 0:
+            # Calculate statistics over different time windows
             win_rate = np.mean([1 if w == 1 else 0 for w in win_history[-update_every:]])
             avg_reward = np.mean(reward_history[-update_every:])
+
+            recent_win_rate = np.mean([1 if w == 1 else 0 for w in win_history[-update_every:]])
+            long_term_win_rate = np.mean([1 if w == 1 else 0 for w in win_history[-update_every*5:]])
+            
+            recent_reward = np.mean(reward_history[-update_every:])
+            long_term_reward = np.mean(reward_history[-update_every*5:])
             
             # Get losses from the update
             policy_loss, value_loss, entropy = ppo_agent.update()
@@ -107,32 +117,66 @@ def train_ppo_against_greedy(
 
     print("Training complete!")
 
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(15, 12))
 
-    plt.subplot(3, 1, 1)
+    # Win rate comparison (recent vs long-term)
+    plt.subplot(4, 1, 1)
     episode_axis = np.arange(1, total_episodes + 1)
-    rolling_winrate = np.convolve(
-        [1 if w == 1 else 0 for w in win_history], np.ones(1)/1, mode='valid'
-    )
-    plt.plot(episode_axis[:len(rolling_winrate)], rolling_winrate, label='Training win rate (rolling avg)')
-
-    plt.subplot(3, 1, 2)
-    rolling_reward = np.convolve(reward_history, np.ones(100)/100, mode='valid')
-    plt.plot(episode_axis[:len(rolling_reward)], rolling_reward, label='Average Reward')
-    plt.xlabel("Episode")
-    plt.ylabel("Reward")
+    
+    # Calculate win rates with smaller windows for more detail
+    window_small = 20  # Show more recent fluctuations
+    window_large = 100  # Show longer-term trend
+    
+    recent_winrate = []
+    long_term_winrate = []
+    
+    for i in range(window_large, len(win_history) + 1):
+        recent_winrate.append(np.mean([1 if w == 1 else 0 for w in win_history[i-window_small:i]]))
+        long_term_winrate.append(np.mean([1 if w == 1 else 0 for w in win_history[i-window_large:i]]))
+    
+    plt.plot(episode_axis[window_large-1:], recent_winrate, label=f'Recent Win Rate ({window_small} episodes)', alpha=0.7)
+    plt.plot(episode_axis[window_large-1:], long_term_winrate, label=f'Long-term Win Rate ({window_large} episodes)', linewidth=2)
+    plt.title('Win Rate Comparison')
+    plt.xlabel('Episode')
+    plt.ylabel('Win Rate')
     plt.grid(True)
     plt.legend()
 
-    plt.subplot(3, 1, 3)
+    # Reward comparison (recent vs long-term)
+    plt.subplot(4, 1, 2)
+    recent_reward = np.convolve(reward_history, np.ones(update_every)/update_every, mode='valid')
+    long_term_reward = np.convolve(reward_history, np.ones(update_every*5)/(update_every*5), mode='valid')
+    plt.plot(episode_axis[:len(recent_reward)], recent_reward, label='Recent Reward')
+    plt.plot(episode_axis[:len(long_term_reward)], long_term_reward, label='Long-term Reward')
+    plt.title('Reward Comparison')
+    plt.grid(True)
+    plt.legend()
+
+    # Loss trends
+    plt.subplot(4, 1, 3)
     update_axis = np.arange(update_every, total_episodes + 1, update_every)
     plt.plot(update_axis, policy_loss_history, label='Policy Loss')
     plt.plot(update_axis, value_loss_history, label='Value Loss')
-    plt.plot(update_axis, entropy_history, label='Entropy')
-    plt.xlabel("Episode")
-    plt.ylabel("Loss/Entropy")
+    plt.title('Loss Trends')
     plt.grid(True)
     plt.legend()
+
+    # Entropy and Win Rate Correlation
+    plt.subplot(4, 1, 4)
+    ax1 = plt.gca()
+    ax2 = ax1.twinx()
+    ax1.plot(update_axis, entropy_history, 'g-', label='Entropy')
+    ax2.plot(update_axis, [np.mean([1 if w == 1 else 0 for w in win_history[max(0, i-update_every):i]]) 
+                          for i in range(update_every, total_episodes + 1, update_every)], 
+             'b-', label='Win Rate')
+    ax1.set_xlabel('Episode')
+    ax1.set_ylabel('Entropy', color='g')
+    ax2.set_ylabel('Win Rate', color='b')
+    plt.title('Entropy vs Win Rate')
+    plt.grid(True)
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
 
     plt.tight_layout()
     plt.show()
