@@ -20,12 +20,11 @@ def calculate_reward(state, winner, turn_count, player_id=1):
 
 def train_ppo_against_greedy(
     total_episodes=1000,
-    update_every=1,
+    update_every=100,
     state_dim=20,
     action_dim=10,
     eval_every=500
 ):
-    print("Starting training against greedy bot...")  # Debug print
     
     ppo_agent = PPOAgent(
         player_id=1,
@@ -40,11 +39,11 @@ def train_ppo_against_greedy(
 
     win_history = []
     reward_history = []
-    turn_history = []
+    policy_loss_history = []
+    value_loss_history = []
+    entropy_history = []
 
     for episode in range(1, total_episodes + 1):
-        if episode % 100 == 0:  # Debug print every 100 episodes
-            print(f"Starting episode {episode}")
             
         state = GameState(adjacency=adjacency)
         for i in range(5):
@@ -91,18 +90,19 @@ def train_ppo_against_greedy(
 
         win_history.append(winner)
         reward_history.append(final_reward)
-        turn_history.append(turn_count)
-
-        if episode % 100 == 0:  # Debug print game completion
-            print(f"Episode {episode} completed in {turn_count} turns. Winner: {winner}")
 
         if episode % update_every == 0:
             win_rate = np.mean([1 if w == 1 else 0 for w in win_history[-update_every:]])
             avg_reward = np.mean(reward_history[-update_every:])
-            avg_turns = np.mean(turn_history[-update_every:])
-            print(f"Episode {episode:5d} | Win rate: {win_rate:.2f} | Reward: {avg_reward:.2f} | Turns: {avg_turns:.1f}")
+            
+            # Get losses from the update
+            policy_loss, value_loss, entropy = ppo_agent.update()
+            policy_loss_history.append(policy_loss)
+            value_loss_history.append(value_loss)
+            entropy_history.append(entropy)
+            
+            print(f"Episode {episode:5d} | Winrate: {win_rate:.2f} | Reward: {avg_reward:.2f} | Policy Loss: {policy_loss:.4f} | Value Loss: {value_loss:.4f} | Entropy: {entropy:.4f}")
 
-            ppo_agent.update()
             ppo_agent.clear_memory()
 
     print("Training complete!")
@@ -125,10 +125,12 @@ def train_ppo_against_greedy(
     plt.legend()
 
     plt.subplot(3, 1, 3)
-    rolling_turns = np.convolve(turn_history, np.ones(100)/100, mode='valid')
-    plt.plot(episode_axis[:len(rolling_turns)], rolling_turns, label='Average Game Length')
+    update_axis = np.arange(update_every, total_episodes + 1, update_every)
+    plt.plot(update_axis, policy_loss_history, label='Policy Loss')
+    plt.plot(update_axis, value_loss_history, label='Value Loss')
+    plt.plot(update_axis, entropy_history, label='Entropy')
     plt.xlabel("Episode")
-    plt.ylabel("Turns")
+    plt.ylabel("Loss/Entropy")
     plt.grid(True)
     plt.legend()
 
@@ -138,4 +140,4 @@ def train_ppo_against_greedy(
     return ppo_agent, win_history, reward_history
 
 if __name__ == "__main__":
-    train_ppo_against_greedy(total_episodes=1000)
+    train_ppo_against_greedy(total_episodes=5000)

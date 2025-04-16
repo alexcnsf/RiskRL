@@ -127,7 +127,7 @@ class PPOAgent:
         
     def update(self):
         if len(self.states) == 0:
-            return
+            return 0.0, 0.0, 0.0  # Return zeros if no updates
             
         # Convert lists to tensors, ensuring consistent dimensions
         try:
@@ -153,6 +153,9 @@ class PPOAgent:
             # PPO update with more epochs and early stopping
             best_loss = float('inf')
             no_improve_count = 0
+            final_policy_loss = 0.0
+            final_value_loss = 0.0
+            final_entropy = 0.0
             
             for epoch in range(20):  # Increased epochs
                 # Get new action probabilities and values
@@ -172,6 +175,11 @@ class PPOAgent:
                 
                 # Total loss with entropy bonus
                 loss = actor_loss + 0.5 * value_loss - self.entropy_coef * entropy
+                
+                # Store the final losses and entropy
+                final_policy_loss = actor_loss.item()
+                final_value_loss = value_loss.item()
+                final_entropy = entropy.item()
                 
                 # Early stopping check
                 if loss < best_loss:
@@ -193,12 +201,16 @@ class PPOAgent:
             print(f"States shape: {np.array(self.states).shape}")
             print(f"First state dim: {len(self.states[0])}")
             print(f"Last state dim: {len(self.states[-1])}")
+            return 0.0, 0.0, 0.0
         
         self.training_step += 1
         
         # Decay exploration noise and entropy coefficient
         if self.training_step % 100 == 0:
             self.entropy_coef = max(0.001, self.entropy_coef * 0.995)
+        
+        # Return the final losses and entropy
+        return final_policy_loss, final_value_loss, final_entropy
         
     def choose_deployments(self, game_state):
         state = game_state.get_state_vector()
