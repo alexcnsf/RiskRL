@@ -22,6 +22,9 @@ class RandomBot:
         
         # Attack with a random number of troops (must leave 1 behind)
         max_troops = game_state.get_troops(from_territory) - 1
+        if max_troops <= 0:  # If we can't attack (only 1 troop)
+            return None, None, None
+            
         num_troops = random.randint(1, min(3, max_troops))  # Max 3 troops like in Risk
         
         return from_territory, to_territory, num_troops 

@@ -86,7 +86,7 @@ def train_ppo_against_bot(opponent_bot, num_episodes=1000, update_every=10):
     """
     # Initialize game state and agents
     game_state = SimpleGameState()
-    ppo_agent = SimplePPOAgent(state_dim=120, action_dim=len(attack_pairs))
+    ppo_agent = SimplePPOAgent(state_dim=31, action_dim=len(attack_pairs))  # 31-dimensional state vector
     
     # Training metrics
     win_history = []
@@ -118,7 +118,7 @@ def train_ppo_against_bot(opponent_bot, num_episodes=1000, update_every=10):
                 
                 # Get current state
                 current_state = game_state.get_state_vector()
-                print(f"State vector shape: {current_state.shape}")  # Debug print
+                #print(f"State vector shape: {current_state.shape}")  # Debug print
                 action, action_prob = ppo_agent.get_action(game_state)
                 
                 # Execute action
@@ -129,25 +129,29 @@ def train_ppo_against_bot(opponent_bot, num_episodes=1000, update_every=10):
                         num_troops = game_state.get_troops(from_territory) - 1
                         result = game_state.attack(1, from_territory, to_territory, num_troops)
                         
-                        # Calculate reward
+                        # Only reward territory conquest
                         reward = 0
                         if result["territory_conquered"]:
-                            reward = 5.0  # Reward for conquering territory
-                            if len(game_state.get_owned_territories(1)) > len(game_state.get_owned_territories(2)):
-                                reward += 2.0  # Bonus for having more territories
-                        else:
-                            # Reward based on damage dealt
-                            reward = result["defender_losses"] * 0.5 - result["attacker_losses"] * 0.3
+                            reward = 10.0  # Reward for conquering territory
                     else:
-                        reward = -0.1  # Penalty for invalid attack
+                        reward = 0  # No penalty for invalid attack
                 else:
-                    reward = -0.2  # Penalty for passing
+                    reward = 0  # No penalty for passing
                 
                 # Add turn penalty
-                reward -= 0.02 * turns
+                reward -= 0.1  # Small penalty per turn
+                
+                # Add game end rewards
+                if done:
+                    if game_state.get_winner() == 1:
+                        reward += 100.0  # Large reward for winning
+                    elif game_state.get_winner() == 2:
+                        reward -= 10.0  # Small penalty for losing
+                    else:
+                        reward = 0  # No penalty for timeout
                 
                 # Get next state
-                next_state = ppo_agent.get_state_vector(game_state)
+                next_state = game_state.get_state_vector()
                 
                 # Store experience
                 ppo_agent.remember(current_state, action, action_prob, reward, next_state, done)
@@ -158,8 +162,8 @@ def train_ppo_against_bot(opponent_bot, num_episodes=1000, update_every=10):
                 turns += 1
                 
                 # Safety check for long games
-                if turns > 250:
-                    print(f"Game exceeded 250 turns, ending episode {episode + 1}")
+                if turns > 500:
+                    #print(f"Game exceeded 500 turns, ending episode {episode + 1}")
                     total_reward -= 10.0
                     done = True
                     break

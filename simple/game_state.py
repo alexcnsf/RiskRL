@@ -125,19 +125,24 @@ class SimpleGameState:
     def get_state_vector(self):
         """Get state vector for PPO agent"""
         # Basic territory info
-        territory_info = self.state[:, 1]  # Troop counts
+        territory_info = self.state[:, 1]  # Troop counts (10 dim)
         
-        # Add adjacency information
-        adjacency_matrix = np.zeros((10, 10))
+        # Get ownership (1 for player 1, 0 for player 2)
+        ownership_info = np.array([1 if self.get_owner(i) == 1 else 0 for i in range(10)])  # (10 dim)
+        
+        # Get turn flag (1 for player 1's turn, 0 for player 2's turn)
+        turn_flag = np.array([1 if self.current_player == 1 else 0])  # (1 dim)
+        
+        # Add territory adjacency information (simplified)
+        adjacency = np.zeros(10)  # (10 dim)
         for i in range(10):
-            for j in self.adjacency.get(i, []):
-                adjacency_matrix[i][j] = 1
-        adjacency_info = adjacency_matrix.flatten()
+            for adj in self.adjacency[i]:
+                if self.get_owner(adj) != self.get_owner(i):
+                    adjacency[i] = 1
+                    break
         
-        # Add ownership info
-        ownership_info = self.state[:, 0]  # Owner (1 or 2)
-        
-        return np.concatenate([territory_info, adjacency_info, ownership_info])
+        # Concatenate all features
+        return np.concatenate([territory_info, ownership_info, turn_flag, adjacency])  # Total: 31 dim
         
     def __str__(self):
         return (

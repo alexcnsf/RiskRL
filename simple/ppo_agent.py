@@ -8,7 +8,7 @@ from torch.distributions import Categorical
 class PolicyNetwork(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(PolicyNetwork, self).__init__()
-        # Input layer: 21-dimensional state (10 troops + 10 owners + 1 turn flag)
+        # Input layer: 31-dimensional state (10 troops + 10 owners + 1 turn flag + 10 adjacency)
         self.fc1 = nn.Linear(state_dim, 64)
         self.ln1 = nn.LayerNorm(64)
         
@@ -33,7 +33,7 @@ class PolicyNetwork(nn.Module):
 class ValueNetwork(nn.Module):
     def __init__(self, state_dim):
         super(ValueNetwork, self).__init__()
-        # Input layer: 21-dimensional state
+        # Input layer: 31-dimensional state (10 troops + 10 owners + 1 turn flag + 10 adjacency)
         self.fc1 = nn.Linear(state_dim, 64)
         self.ln1 = nn.LayerNorm(64)
         
@@ -67,46 +67,14 @@ class SimplePPOAgent:
         
         self.memory = []
         
-    def get_state_vector(self, game_state):
-        """Convert game state to observation vector"""
-        # Get troop counts (normalized)
-        troops = np.array([game_state.get_troops(i) / 10.0 for i in range(10)])
-        
-        # Get ownership (1 for player 1, 0 for player 2)
-        owners = np.array([1 if game_state.get_owner(i) == 1 else 0 for i in range(10)])
-        
-        # Get turn flag (1 for player 1's turn, 0 for player 2's turn)
-        turn_flag = np.array([1 if game_state.current_player == 1 else 0])
-        
-        # Add territory adjacency information
-        adjacency = np.zeros(10)
-        for i in range(10):
-            for adj in game_state.adjacency[i]:
-                if game_state.get_owner(adj) != game_state.get_owner(i):
-                    adjacency[i] = 1
-                    break
-        
-        # Concatenate all features
-        return np.concatenate([troops, owners, turn_flag, adjacency])
-        
     def get_action(self, game_state):
         """Get action from policy network"""
-        # Convert state to tensor
-        state = self.get_state_vector(game_state)
-        state_tensor = torch.FloatTensor(state)
-        
-        # Get action probabilities
+        state = game_state.get_state_vector()
+        state_tensor = torch.FloatTensor(state).unsqueeze(0)
         action_probs = self.policy_net(state_tensor)
-        
-        # Choose action using epsilon-greedy
-        if np.random.random() < self.epsilon:
-            # Random exploration
-            action = np.random.randint(len(action_probs))
-        else:
-            # Choose based on policy
-            action = torch.multinomial(action_probs, 1).item()
-            
-        return action, action_probs[action].item()
+        dist = Categorical(action_probs)
+        action = dist.sample()
+        return action.item(), action_probs[0][action.item()].item()
         
     def remember(self, state, action, action_prob, reward, next_state, done):
         self.memory.append((state, action, action_prob, reward, next_state, done))
