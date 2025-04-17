@@ -35,7 +35,26 @@ class GameState:
         self.remaining_troops[player_id] -= num_troops
 
     def get_state_vector(self):
-        return self.state.flatten()
+        # Basic territory information (10 territories * 2 features)
+        territory_info = self.state.flatten()
+        
+        # Add adjacency information (10 territories * 10 territories)
+        adjacency_matrix = np.zeros((10, 10))
+        for i in range(10):
+            for j in self.adjacency.get(i, []):
+                adjacency_matrix[i][j] = 1
+        adjacency_info = adjacency_matrix.flatten()
+        
+        # Add remaining troops information
+        troops_info = np.array([self.remaining_troops[1], self.remaining_troops[2]])
+        
+        # Add phase information (one-hot encoded)
+        # 0: deployment, 1: attack, 2: fortify
+        phase_info = np.zeros(3)
+        phase_info[0] = 1  # Default to deployment phase
+        
+        # Combine all information
+        return np.concatenate([territory_info, adjacency_info, troops_info, phase_info])
 
     def __str__(self):
             return (
